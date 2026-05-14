@@ -6,7 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
-namespace Spline;
+namespace Lab4;
 
 public partial class MainWindow : Window
 {
@@ -230,7 +230,7 @@ public partial class MainWindow : Window
     {
         const double OVERDRAW = 2.0;
 
-        var P = PolynomialCoefficients.Generate(_points, IsClosedSpline?.IsChecked is true);
+        var P = Spline.Generate(_points, IsClosedSpline?.IsChecked is true);
         if (P is null) return;
 
         _polynomial.Points.Clear();
@@ -323,9 +323,9 @@ public partial class MainWindow : Window
     private string ExportFormulas()
     {
         var points = _points.OrderBy(p => p.X).ToList();
-        var P = PolynomialCoefficients.Generate(points);
-        if (P is null) return "";
-        var (a, b, c, d) = P;
+        var C = Spline.Generate(points);
+        if (C is null) return "";
+        var (a, b, c, d) = C;
 
         // Force using '.' instead of ',' for floats.
         var cultureInfo = CultureInfo.InvariantCulture;
@@ -382,11 +382,11 @@ public partial class MainWindow : Window
     #endregion
 }
 
-record PolynomialCoefficients(double[] A, double[] B, double[] C, double[] D)
+record Spline(double[] A, double[] B, double[] C, double[] D)
 {
     private const double EPS = 1e-8;
 
-    public static PolynomialCoefficients? Generate(IList<Point> points, bool isClosed = false)
+    public static Spline? Generate(IList<Point> points, bool isClosed = false)
     {
         if (points.Count < 2)
         {
@@ -431,9 +431,9 @@ record PolynomialCoefficients(double[] A, double[] B, double[] C, double[] D)
                 A[i, next] += h[i];
                 A[i, i] += 2.0 * (h[prev] + h[i]);
 
-                var term1 = (a[next] - a[i]) / h[i];
-                var term2 = (a[i] - a[prev]) / h[prev];
-                B[i] = 3.0 * (term1 - term2);
+                var d0 = (a[i] - a[prev]) / h[prev];
+                var d1 = (a[next] - a[i]) / h[i];
+                B[i] = 6.0 * (d1 - d0);
             }
 
             var cReduced = LupSolve(A, B);

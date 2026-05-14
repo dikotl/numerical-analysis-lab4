@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-    <RootNamespace>Spline</RootNamespace>
+    <RootNamespace>Lab4</RootNamespace>
   </PropertyGroup>
 
 </Project>
