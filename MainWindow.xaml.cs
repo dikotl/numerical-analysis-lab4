@@ -12,6 +12,7 @@ public partial class MainWindow : Window
 {
     private static readonly SolidColorBrush _splineColorBrush = new((Color)ColorConverter.ConvertFromString("#FF8C00"));
     private static readonly SolidColorBrush _polynomialColorBrush = new((Color)ColorConverter.ConvertFromString("#1E90FF"));
+    private static readonly SolidColorBrush _differenceColorBrush = new((Color)ColorConverter.ConvertFromString("#DC143C"));
 
     private List<Point> _points = [new(1, 1), new(3, 14), new(5, 8), new(6, 12), new(9, 10)];
 
@@ -24,6 +25,25 @@ public partial class MainWindow : Window
     private const double POINT_RADIUS = 6.0;
     private const double GRAPH_DISTANCE_BETWEEN_POINTS = 0.05;
 
+    private readonly Polyline _spline = new()
+    {
+        Stroke = _splineColorBrush,
+        StrokeThickness = 2.5
+    };
+
+    private readonly Polyline _polynomial = new()
+    {
+        Stroke = _polynomialColorBrush,
+        StrokeThickness = 2
+    };
+
+    private readonly Polyline _difference = new()
+    {
+        Stroke = _differenceColorBrush,
+        StrokeThickness = 2,
+        StrokeDashArray = [4, 3],
+    };
+
     public MainWindow()
     {
         InitializeComponent();
@@ -34,7 +54,7 @@ public partial class MainWindow : Window
 
     #region Event handlers
 
-    private void Canvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void Canvas_MouseLeftButtonDown(object? sender, MouseButtonEventArgs e)
     {
         Point mousePosition = e.GetPosition(DrawCanvas);
         Point mousePositionInUnits = ScreenSpaceToUnits(mousePosition);
@@ -54,17 +74,16 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Canvas_MouseMove(object sender, MouseEventArgs e)
+    private void Canvas_MouseMove(object? sender, MouseEventArgs e)
     {
         if (_isDragging && _draggedPointIndex != -1)
         {
-            Point mousePos = e.GetPosition(DrawCanvas);
-            _points[_draggedPointIndex] = ScreenSpaceToUnits(mousePos);
+            _points[_draggedPointIndex] = ScreenSpaceToUnits(e.GetPosition(DrawCanvas));
             Redraw();
         }
     }
 
-    private void Canvas_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void Canvas_MouseLeftButtonUp(object? sender, MouseButtonEventArgs e)
     {
         if (_isDragging)
         {
@@ -74,34 +93,31 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Canvas_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    private void Canvas_MouseRightButtonDown(object? sender, MouseButtonEventArgs e)
     {
-        Point mousePos = e.GetPosition(DrawCanvas);
-        int index = GetPointIndexAt(mousePos);
+        var index = GetPointIndexAt(e.GetPosition(DrawCanvas));
 
-        if (index != -1 && _points.Count > 2) // Залишаємо мінімум 2 точки
+        if (index != -1 && _points.Count > 2)
         {
             _points.RemoveAt(index);
             Redraw();
         }
     }
 
-    private void IsClosedSpline_CheckedChanged(object sender, RoutedEventArgs e)
+    private void IsClosedSpline_CheckedChanged(object? sender, RoutedEventArgs e)
     {
         Redraw();
     }
 
     private int GetPointIndexAt(Point screenPos)
     {
-        for (int i = 0; i < _points.Count; i++)
+        return _points.FindIndex(point =>
         {
-            Point pScreen = UnitsToScreenSpace(_points[i]);
-            double dx = pScreen.X - screenPos.X;
-            double dy = pScreen.Y - screenPos.Y;
-            if (Math.Sqrt(dx * dx + dy * dy) <= POINT_RADIUS * 2) // Трохи збільшена зона кліку
-                return i;
-        }
-        return -1;
+            var pScreen = UnitsToScreenSpace(point);
+            var dx = pScreen.X - screenPos.X;
+            var dy = pScreen.Y - screenPos.Y;
+            return Math.Sqrt(dx * dx + dy * dy) <= POINT_RADIUS * 2;
+        });
     }
 
     #endregion
@@ -114,24 +130,34 @@ public partial class MainWindow : Window
 
         DrawCanvas.Children.Clear();
 
+        Point? activePoint = _draggedPointIndex != -1 ? _points[_draggedPointIndex] : null;
+
         // Sort points by X axis so we can draw spline correctly.
         _points = _points.OrderBy(p => p.X).ToList();
 
+        // If there is 2 points with almost identical X value slightly offset one of them.
+        for (int i = 1; i < _points.Count; i++)
+        {
+            if (_points[i].X - _points[i - 1].X < 0.01)
+            {
+                _points[i] = new Point(_points[i - 1].X + 0.01, _points[i].Y);
+            }
+        }
+
+        // Set correct point index if they was reordered.
+        if (activePoint is Point active)
+        {
+            _draggedPointIndex = _points.IndexOf(active);
+        }
+
+        // In closed splines first and last points must have same Y value.
         if (IsClosedSpline?.IsChecked is true && _points.Count > 1)
         {
-            var first = _points.First();
-            var last = _points.Last();
-            _points[^1] = new Point(last.X, first.Y);
+            _points[^1] = new Point(_points[^1].X, _points[0].Y);
         }
 
         DrawAxes();
-
-        if (_points.Count >= 2)
-        {
-            DrawPolynomial();
-            DrawSpline();
-        }
-
+        if (_points.Count >= 2) DrawGraph();
         DrawPoints();
     }
 
@@ -164,7 +190,7 @@ public partial class MainWindow : Window
     {
         for (int i = 0; i < _points.Count; i++)
         {
-            var fill = (IsClosedSpline?.IsChecked is true && i == _points.Count - 1)
+            var fillBrush = (IsClosedSpline?.IsChecked is true && i == _points.Count - 1)
                 ? Brushes.Red
                 : Brushes.White;
             var pointPosition = UnitsToScreenSpace(_points[i]);
@@ -172,7 +198,7 @@ public partial class MainWindow : Window
             {
                 Width = POINT_RADIUS * 2,
                 Height = POINT_RADIUS * 2,
-                Fill = fill,
+                Fill = fillBrush,
                 Stroke = Brushes.Black,
                 StrokeThickness = 2
             };
@@ -200,46 +226,46 @@ public partial class MainWindow : Window
 
     #region Math
 
-    private void DrawPolynomial()
+    private void DrawGraph()
     {
-        var poly = new Polyline
-        {
-            Stroke = _polynomialColorBrush,
-            StrokeThickness = 2
-        };
+        const double OVERDRAW = 2.0;
 
-        var minX = _points.First().X - 1.0;
-        var maxX = _points.Last().X + 1.0;
+        var P = PolynomialCoefficients.Generate(_points, IsClosedSpline?.IsChecked is true);
+        if (P is null) return;
+
+        _polynomial.Points.Clear();
+        _spline.Points.Clear();
+        _difference.Points.Clear();
+
+        var (a, b, c, d) = P;
+        var minX = _points.First().X - OVERDRAW;
+        var maxX = _points.Last().X + OVERDRAW;
+        var currentSegmentIndex = 0;
+        var n = _points.Count - 1;
 
         for (var x = minX; x <= maxX; x += GRAPH_DISTANCE_BETWEEN_POINTS)
         {
-            poly.Points.Add(UnitsToScreenSpace(new(x, LagrangeInterpolation(x))));
-        }
-        DrawCanvas.Children.Add(poly);
-    }
-
-    private void DrawSpline()
-    {
-        var P = PolynomialCoefficients.Generate(_points, IsClosedSpline?.IsChecked is true);
-        if (P is null) return;
-        var (a, b, c, d) = P;
-
-        var spline = new Polyline
-        {
-            Stroke = _splineColorBrush,
-            StrokeThickness = 2.5
-        };
-
-        for (int i = 0; i < _points.Count - 1; i++)
-        {
-            for (var x = _points[i].X; x <= _points[i + 1].X; x += GRAPH_DISTANCE_BETWEEN_POINTS)
+            // Increment segment index if X is outside of the current segment.
+            while (currentSegmentIndex < n - 1 && x > _points[currentSegmentIndex + 1].X)
             {
-                var dx = x - _points[i].X;
-                var y = a[i] + b[i] * dx + c[i] * dx * dx + d[i] * dx * dx * dx;
-                spline.Points.Add(UnitsToScreenSpace(new Point(x, y)));
+                currentSegmentIndex++;
             }
+
+            var polyY = LagrangeInterpolation(x);
+            var dx = x - _points[currentSegmentIndex].X;
+            var splineY = a[currentSegmentIndex]
+                        + b[currentSegmentIndex] * dx
+                        + c[currentSegmentIndex] * dx * dx
+                        + d[currentSegmentIndex] * dx * dx * dx;
+
+            _spline.Points.Add(UnitsToScreenSpace(new Point(x, splineY)));
+            _polynomial.Points.Add(UnitsToScreenSpace(new Point(x, polyY)));
+            _difference.Points.Add(UnitsToScreenSpace(new Point(x, polyY - splineY)));
         }
-        DrawCanvas.Children.Add(spline);
+
+        DrawCanvas.Children.Add(_spline);
+        DrawCanvas.Children.Add(_polynomial);
+        DrawCanvas.Children.Add(_difference);
     }
 
     private double LagrangeInterpolation(double x)
@@ -254,6 +280,7 @@ public partial class MainWindow : Window
             {
                 if (i != j)
                 {
+                    // 2 points can't be placed at the same X.
                     p *= (x - _points[j].X) / (_points[i].X - _points[j].X);
                 }
             }
@@ -268,15 +295,15 @@ public partial class MainWindow : Window
 
     #region Formulas export
 
-    private void BtnCopyFormulas_Click(object sender, RoutedEventArgs e)
+    private void BtnCopyFormulas_Click(object? sender, RoutedEventArgs e)
     {
         var formulas = ExportFormulas();
 
         if (string.IsNullOrEmpty(formulas))
         {
             MessageBox.Show(
-                "Create at least 2 point to be able to generate formulas.",
-                "No points provided",
+                "Unable to export formulas due to internal error.",
+                "Internal error",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning
             );
@@ -285,7 +312,7 @@ public partial class MainWindow : Window
         {
             Clipboard.SetText(formulas);
             MessageBox.Show(
-                "Formulas was copied to clipboard!.",
+                "Formulas was copied to clipboard!",
                 "Success",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information
@@ -296,7 +323,7 @@ public partial class MainWindow : Window
     private string ExportFormulas()
     {
         var points = _points.OrderBy(p => p.X).ToList();
-        var P = PolynomialCoefficients.Generate(points)!;
+        var P = PolynomialCoefficients.Generate(points);
         if (P is null) return "";
         var (a, b, c, d) = P;
 
@@ -311,7 +338,7 @@ public partial class MainWindow : Window
         }
 
         // Write spline formula.
-        buffer.Append("S(x) = \\{");
+        buffer.Append(@"S(x) = \{");
         for (int i = 0; i < points.Count - 1; i++)
         {
             var term = $"{a[i].ToString("F4", cultureInfo)} + " +
@@ -324,7 +351,7 @@ public partial class MainWindow : Window
                 : $"x <= {points[i + 1].X.ToString("F4", cultureInfo)}: {term}, "
             );
         }
-        buffer.AppendLine("\\}");
+        buffer.AppendLine(@"\}");
 
         // Write polynomial formula.
         buffer.Append("P(x) = ");
@@ -357,6 +384,8 @@ public partial class MainWindow : Window
 
 record PolynomialCoefficients(double[] A, double[] B, double[] C, double[] D)
 {
+    private const double EPS = 1e-8;
+
     public static PolynomialCoefficients? Generate(IList<Point> points, bool isClosed = false)
     {
         if (points.Count < 2)
@@ -379,6 +408,9 @@ record PolynomialCoefficients(double[] A, double[] B, double[] C, double[] D)
         for (int i = 0; i < n; i++)
         {
             h[i] = points[i + 1].X - points[i].X;
+
+            // If all points are at Y=0, replace with epsilon.
+            if (Math.Abs(h[i]) < EPS) h[i] = EPS;
         }
 
         if (isClosed)
