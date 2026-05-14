@@ -322,6 +322,8 @@ public partial class MainWindow : Window
 
     private string ExportFormulas()
     {
+        static string Float(double x) => x.ToString("0.####", CultureInfo.InvariantCulture);
+
         var points = _points.OrderBy(p => p.X).ToList();
         var C = Spline.Generate(points);
         if (C is null) return "";
@@ -334,21 +336,21 @@ public partial class MainWindow : Window
         // Write points.
         foreach (var point in points)
         {
-            buffer.AppendLine($"({point.X.ToString("F4", cultureInfo)}, {point.Y.ToString("F4", cultureInfo)})");
+            buffer.AppendLine($"({Float(point.X)}, {Float(point.Y)})");
         }
 
         // Write spline formula.
         buffer.Append(@"S(x) = \{");
         for (int i = 0; i < points.Count - 1; i++)
         {
-            var term = $"{a[i].ToString("F4", cultureInfo)} + " +
-                $"{b[i].ToString("F4", cultureInfo)}(x - ({points[i].X.ToString("F4", cultureInfo)})) + " +
-                $"{c[i].ToString("F4", cultureInfo)}(x - ({points[i].X.ToString("F4", cultureInfo)}))^2 + " +
-                $"{d[i].ToString("F4", cultureInfo)}(x - ({points[i].X.ToString("F4", cultureInfo)}))^3";
+            var term = $"{Float(a[i])} + " +
+                $"{Float(b[i])}(x - ({Float(points[i].X)})) + " +
+                $"{Float(c[i])}(x - ({Float(points[i].X)}))^2 + " +
+                $"{Float(d[i])}(x - ({Float(points[i].X)}))^3";
             buffer.Append(
                 (i == points.Count - 2)
                 ? term // last
-                : $"x <= {points[i + 1].X.ToString("F4", cultureInfo)}: {term}, "
+                : $"x <= {Float(points[i + 1].X)}: {term}, "
             );
         }
         buffer.AppendLine(@"\}");
@@ -357,15 +359,15 @@ public partial class MainWindow : Window
         buffer.Append("P(x) = ");
         for (int i = 0; i < points.Count; i++)
         {
-            buffer.Append(points[i].Y.ToString("F4", cultureInfo));
+            buffer.Append(Float(points[i].Y));
 
             for (int j = 0; j < points.Count; j++)
             {
                 if (i != j)
                 {
                     buffer.Append(
-                        $"((x - ({points[j].X.ToString("F4", cultureInfo)}))/" +
-                       $"({points[i].X.ToString("F4", cultureInfo)} - ({points[j].X.ToString("F4", cultureInfo)})))"
+                        $"((x - ({Float(points[j].X)}))/" +
+                       $"({Float(points[i].X)} - ({Float(points[j].X)})))"
                     );
                 }
             }
